@@ -1,1 +1,3 @@
 # videoReaderMatlab_FFmpeg
+A class to read (almost) all types of video in Matlab. This class has  been developped as a alternative (and more) to matlab VideoReader object that is sometime buggy under Ubuntu.
+I also provides all the properties of the input video including the type (I, P, B) of each frame. The class uses FFmpeg to decode and save all the frames of the input video as .bmp files at a specified location  (hard drive) and thus doesn't make usage of the computer's RAM . FFprobe is used to read the properties of the input videos (fps, video bitrate, video resolution, frames type, video rotation parameter).
