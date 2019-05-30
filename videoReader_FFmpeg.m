@@ -79,12 +79,22 @@ classdef videoReader_FFmpeg
     
     methods
         function obj = videoReader_FFmpeg(input_vid,storage_loc)
-            if nargin == 1 % uses the default storage location
+            if nargin == 1 % uses the default storage location which is the input video's location
                 obj.file_name = input_vid;
-                obj.frame_storage_location = './';
+                %building the path to the temporary storage location on the
+                %disk
+                framesPath = obj.file_name(1:length(obj.file_name)-4);%removing the extention from the video's name
+                framesPath = strcat(framesPath,'Frames');
+                obj.frame_storage_location = framesPath;
             else %uses the specified storage location
                 obj.file_name = input_vid;
-                fprintf('recieved two arguments\n');
+                framesPath = obj.file_name(1:length(obj.file_name)-4);%removing the extention from the video's name
+                splashes = strfind(framesPath,'/');
+                if storage_loc(end) == '/'
+                    storage_loc = storage_loc(1:end-1); %removing an eventual '/'
+                end
+                framesPath = strcat(storage_loc,'/', framesPath(splashes(end) + 1 :end), 'Frames');
+                obj.frame_storage_location = framesPath;
             end
             %reading the video's properties using ffprope
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -209,9 +219,9 @@ classdef videoReader_FFmpeg
             %Iframes = indices(framesType == 'I');
             %Determining the size of each GOP
             %for n = 1 : length(Iframes) -1
-            %     
+            %
             %    GOPsize(n) = Iframes(n + 1) - Iframes(n);
-                
+            
             % end
             fclose(fid);
             delete(textFile);
@@ -224,7 +234,100 @@ classdef videoReader_FFmpeg
             obj.nber_frames = nbFrames;
             obj.GOPs_structure = GOPstruct;
             obj.frames_type = framesType;
+            
+        end
+        %function reading the input video and saving its frames at the
+        %specified location
+        %@error_occured is a boolean value indicating if an error occured
+        %during video reading
+        %@loading_log : contains a log of eventual errors that occured
+        %during video reading
+        function [error_occured, errors_log] = loadToDisk(obj)
+            %creating the temporary storage folder
+            succeed = mkdir(obj.frame_storage_location);
+            if succeed ~= 1  %couldn't open the output folder
+                error_occured = 1;
+                errors_log{1} = 'frame storage folder could not be created';
+                fprintf('frame storage folder could not be created\n');
+                return;
+            end
+            error_count = 0;
+            %creating subfolder for specific frame types
+            mkdir(obj.frame_storage_location,'Iframes');
+            mkdir(obj.frame_storage_location,'PBframes');
+            %extracting the I frames in the folder Iframes
+            system('ffmpeg -i ',[' ' obj.file_name],' -vf "select=eq(pict_type\,I)" -vsync vfr', obj.frame_storage_location,'/','Iframes','/Iframe%d.bmp'); %extracting I frames
+            %counting the number of frames extracted frames which corresponds to the number of files
+            %in the folder
+            nberIimages = length(dir(strcat(obj.frame_storage_location,'/Iframes'))) - 2;
+            if obj.nber_Iframes ~= nberIimages
+                obj.nber_Iframes = nberIimages;
+                %'/!\ couldnt read all I frames'
+                 errors_log{error_count + 1} = 'Could not read all the I frames from the video';
+                 error_count = error_count + 1;
+            end
+            %concatenating the files names for futher checks
+            for i = 1 : nberIimages
+                framesFileNames = strcat(framesFileNames,fileNames(i).name);
+            end
+            
+            %extracting the P frames in the folder PBframes
+            commandText = strcat('ffmpeg -i ',videoPath,' -vf "select=eq(pict_type\,P)" -vsync vfr', framesPath,'/','PBframes','/Pframe%d.bmp');
+            system(commandText); %extracting frames
+            %counting the number of frames extracted which corresponds to the number of files
+            %in the folder
+            fileNames = dir(strcat(framesPath(2:length(framesPath)),'/PBframes'));
+            fileNames = fileNames(3:length(fileNames));
+            nberPimages = length(fileNames);
+            if videoProperties.nbPframes ~= nberPimages
+                videoProperties.nbPframes = nberPimages;
+                %'/!\ couldnt read all the P frames'
+                errorMsg = strcat(errorMsg, 'Could not read all the P frames from the video');
+            end
+            
+            for i = 1 : nberPimages
+                framesFileNames = strcat(framesFileNames,fileNames(i).name);
+            end
+            
+            %extracting the B frames in the folder PBframes
+            commandText = strcat('ffmpeg -i ',videoPath,' -vf "select=eq(pict_type\,B)" -vsync vfr', framesPath,'/','PBframes','/Bframe%d.bmp');
+            system(commandText); %extracting frames
+            %counting the number of frames extracted which corresponds to the number of files
+            %in the folder
+            fileNames = dir(strcat(framesPath(2:length(framesPath)),'/PBframes'));
+            fileNames = fileNames(3:length(fileNames));
+            nberBimages = length(fileNames);
+            nberBimages = nberBimages - nberPimages;
+            if videoProperties.nbBframes ~= nberBimages
+                videoProperties.nbBframes = nberBimages;
+                %'/!\ couldnt read all the B frames'
+                errorMsg = strcat(errorMsg, 'Could not read all the B frames from the video');
+            end
+            for i = 1 : nberBimages
+                framesFileNames = strcat(framesFileNames,fileNames(i).name);
+            end
+            %checking the extracted files because the decoder can fail to extract some
+            %frames.
+            %this part of the script will check that the frames are really extracted and
+            %will stop as soon as it meets a frame which could not be extracted
+            for i = 1: length(videoProperties.framesType)
+                frameImageName = getFrameImageFileName(i,videoProperties);
+                testFile = length(strfind(framesFileNames,frameImageName));
+                if testFile == 0 %if the corresponding file doesn't exist stop browsing and return the correct chunck
+                    videoProperties.framesType = videoProperties.framesType(1:i-1);
+                    videoProperties.nbFrames = i-1;
+                    break;
+                end
                 
+            end
+            %creating a log file if errors has occured during frames reading
+            if length(errorMsg) > 0
+                '/!\Errors occured during reading; saving a log file/!\'
+                fileId = fopen(strcat(framesPath(2:length(framesPath)),'readLog.txt'),'w');
+                fprintf(fileId,'%s\n',errorMsg);
+                fclose(fileId);
+                
+            end
         end
         
         function outputArg = method1(obj,inputArg)
@@ -233,5 +336,42 @@ classdef videoReader_FFmpeg
             outputArg = obj.Property1 + inputArg;
         end
     end
+end
+
+%function returning the  name of image representing a given frame
+%takes as input arguments the frame indice and parameters of the video
+%return the file name corresponding to the input file
+
+function frameImageName = getFrameImageFileName(frameIndice, videoParams)
+
+frameIndices = 1:videoParams.nbFrames;
+IframeIndices = frameIndices(videoParams.framesType == 'I');
+PframeIndices = frameIndices(videoParams.framesType == 'P');
+BframeIndices = frameIndices(videoParams.framesType == 'B');
+frameType = videoParams.framesType(frameIndice);
+
+%switching to  the right section according to type of frame
+switch frameType
+    case 'P'
+        %looking for the image index in the array of frames
+        imageIndice = (PframeIndices == frameIndice);
+        imageIndice = find(imageIndice);  
+        %file name construction
+        fileName = strcat('Pframe',num2str(imageIndice),'.bmp');
+    case 'B'
+        imageIndice = (BframeIndices == frameIndice);
+        imageIndice = find(imageIndice);  
+        %file name construction
+        fileName = strcat('Bframe',num2str(imageIndice),'.bmp');
+    case 'I'             
+        imageIndice = (IframeIndices == frameIndice);
+        imageIndice = find(imageIndice);  
+        %file name construction
+        fileName = strcat('Iframe',num2str(imageIndice),'.bmp');        
+    
+ end
+
+frameImageName = fileName;
+
 end
 
