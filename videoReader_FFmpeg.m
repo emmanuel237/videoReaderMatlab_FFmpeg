@@ -23,7 +23,8 @@ classdef videoReader_FFmpeg
     % -obj.loadToDisk(): decodes the video and saves its frames as .bmp files at the specified location.
     % -[frame] = obj.readFrame(frame_index): reads the frames of specified index.
     % -obj.unloadFromDisk(): frees the space on the hard drive alocated for frames' temporary storage.
-    %(C): Emmanuel Kiegaing Kouokam 2019
+    %(C): Emmanuel Kiegaing Kouokam 2019, Image processin laboratory,
+    %Uludag university
     %Class's properties
     
     properties (SetAccess=private)
@@ -75,6 +76,9 @@ classdef videoReader_FFmpeg
     properties (SetAccess=private)
         frame_storage_location %location for frames temporary storage
     end
+    properties (SetAccess=private)
+        errors_log %log of all error associated with the operations performed on the input video
+    end
     
     
     methods
@@ -99,8 +103,7 @@ classdef videoReader_FFmpeg
             %reading the video's properties using ffprope
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             %reading the video's H264 profile
-            commandText = strcat('ffprobe -v error -show_format -show_streams',[' ' obj.file_name],' > ',obj.file_name(1:length(obj.file_name)-4),'_', 'videoInfos.txt');
-            system(commandText);%launching the ffprobe command
+            system(strcat('ffprobe -v error -show_format -show_streams',[' ' obj.file_name],' > ',[' ' obj.file_name(1:length(obj.file_name)-4)],'_', 'videoInfos.txt'));%launching the ffprobe command
             clc;
             textFile = strcat(obj.file_name(1:length(obj.file_name)-4),'_', 'videoInfos.txt');
             %looking for the tag profile in the output file
@@ -117,10 +120,9 @@ classdef videoReader_FFmpeg
             delete(textFile);
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             %       reading the video's rotation parameter %%%%%%%%%%%%%%%%%%%%%%%%
-            commandText = strcat('ffprobe -i ',[' ' obj.file_name]);
             textFile = strcat(obj.file_name(1:length(obj.file_name)-4),'_', 'videoInfos.txt');
             diary(textFile);
-            system(commandText);%launching the ffprobe command
+            system(strcat('ffprobe -i ',[' ' obj.file_name]));%launching the ffprobe command
             diary off;
             clc;
             %looking for the tag profile in the output file
@@ -138,19 +140,18 @@ classdef videoReader_FFmpeg
             delete(textFile);
             
             %%%%% reading the video frame rate %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            commandText = strcat('ffprobe -v 0 -of csv=p=0 -select_streams v:0 -show_entries stream=r_frame_rate',[' ' obj.file_name]);
             textFile = strcat(obj.file_name(1:length(obj.file_name)-4),'_', 'videoInfos.txt');
             diary(textFile);
-            system(commandText);%launching the ffprobe command
+            system(strcat('ffprobe -v 0 -of csv=p=0 -select_streams v:0 -show_entries stream=r_frame_rate',[' ' obj.file_name]));%launching the ffprobe command
             diary off;
             clc;
             fid = fopen(textFile);
-            tline = fgetl(fid);
+            tline = fgetl(fid)
             obj.frame_rate = eval(tline);
             fclose(fid);%closing and deleting the temporary text file
             delete(textFile);
             %%%%%%%%%%%%%%%%%%% read the others video properties
-            commandText = strcat('ffprobe -show_frames -select_streams v:0 -show_entries stream=bit_rate',[' ' obj.file_name],' > ',obj.file_name(1:length(obj.file_name)-4),'_', 'videoInfos.txt');
+            commandText = strcat('ffprobe -show_frames -select_streams v:0 -show_entries stream=bit_rate',[' ' obj.file_name],' > ',[' ' obj.file_name(1:length(obj.file_name)-4)],'_', 'videoInfos.txt');
             system(commandText);
             textFile = strcat(obj.file_name(1:length(obj.file_name)-4),'_', 'videoInfos.txt');
             clc %clearing the console to remove messages from system command
@@ -236,18 +237,19 @@ classdef videoReader_FFmpeg
             obj.frames_type = framesType;
             
         end
+        
         %function reading the input video and saving its frames at the
         %specified location
         %@error_occured is a boolean value indicating if an error occured
         %during video reading
         %@loading_log : contains a log of eventual errors that occured
         %during video reading
-        function [error_occured, errors_log] = loadToDisk(obj)
+        function [error_occured] = loadToDisk(obj)
             %creating the temporary storage folder
             succeed = mkdir(obj.frame_storage_location);
             if succeed ~= 1  %couldn't open the output folder
                 error_occured = 1;
-                errors_log{1} = 'frame storage folder could not be created';
+                obj.errors_log{1} = 'frame storage folder could not be created';
                 fprintf('frame storage folder could not be created\n');
                 return;
             end
@@ -256,33 +258,38 @@ classdef videoReader_FFmpeg
             mkdir(obj.frame_storage_location,'Iframes');
             mkdir(obj.frame_storage_location,'PBframes');
             %extracting the I frames in the folder Iframes
-            system('ffmpeg -i ',[' ' obj.file_name],' -vf "select=eq(pict_type\,I)" -vsync vfr', obj.frame_storage_location,'/','Iframes','/Iframe%d.bmp'); %extracting I frames
+            system(strcat('ffmpeg -i ',[' ' obj.file_name],' -vf "select=eq(pict_type\,I)" -vsync vfr', [' ' obj.frame_storage_location],'/','Iframes','/Iframe%d.bmp')); %extracting I frames
             %counting the number of frames extracted frames which corresponds to the number of files
             %in the folder
             nberIimages = length(dir(strcat(obj.frame_storage_location,'/Iframes'))) - 2;
             if obj.nber_Iframes ~= nberIimages
                 obj.nber_Iframes = nberIimages;
                 %'/!\ couldnt read all I frames'
-                 errors_log{error_count + 1} = 'Could not read all the I frames from the video';
-                 error_count = error_count + 1;
+                obj.errors_log{error_count + 1} = 'Could not read all the I frames from the video';
+                error_count = error_count + 1;
+                fprintf('%s\n',obj.errors_log{error_count});
             end
             %concatenating the files names for futher checks
+            fileNames = dir(strcat(obj.frame_storage_location,'/Iframes'));
+            fileNames = fileNames(3:length(fileNames));
+            framesFileNames = '';
             for i = 1 : nberIimages
                 framesFileNames = strcat(framesFileNames,fileNames(i).name);
             end
             
             %extracting the P frames in the folder PBframes
-            commandText = strcat('ffmpeg -i ',videoPath,' -vf "select=eq(pict_type\,P)" -vsync vfr', framesPath,'/','PBframes','/Pframe%d.bmp');
-            system(commandText); %extracting frames
+            system(strcat('ffmpeg -i ',[' ' obj.file_name],' -vf "select=eq(pict_type\,P)" -vsync vfr', [' ' obj.frame_storage_location],'/','PBframes','/Pframe%d.bmp')); %extracting frames
             %counting the number of frames extracted which corresponds to the number of files
             %in the folder
-            fileNames = dir(strcat(framesPath(2:length(framesPath)),'/PBframes'));
+            fileNames = dir(strcat(obj.frame_storage_location,'/PBframes'));
             fileNames = fileNames(3:length(fileNames));
             nberPimages = length(fileNames);
-            if videoProperties.nbPframes ~= nberPimages
-                videoProperties.nbPframes = nberPimages;
+            if obj.nber_Pframes ~= nberPimages
+                obj.nber_Pframes = nberPimages;
                 %'/!\ couldnt read all the P frames'
-                errorMsg = strcat(errorMsg, 'Could not read all the P frames from the video');
+                obj.errors_log{error_count + 1} = 'Could not read all the P frames from the video';
+                error_count = error_count + 1;
+                fprintf('%s\n',obj.errors_log{error_count});
             end
             
             for i = 1 : nberPimages
@@ -290,18 +297,19 @@ classdef videoReader_FFmpeg
             end
             
             %extracting the B frames in the folder PBframes
-            commandText = strcat('ffmpeg -i ',videoPath,' -vf "select=eq(pict_type\,B)" -vsync vfr', framesPath,'/','PBframes','/Bframe%d.bmp');
-            system(commandText); %extracting frames
+            system(strcat('ffmpeg -i ',[' ' obj.file_name],' -vf "select=eq(pict_type\,B)" -vsync vfr', [' ' obj.frame_storage_location],'/','PBframes','/Bframe%d.bmp')); %extracting frames
             %counting the number of frames extracted which corresponds to the number of files
             %in the folder
-            fileNames = dir(strcat(framesPath(2:length(framesPath)),'/PBframes'));
+            fileNames = dir(strcat(obj.frame_storage_location,'/PBframes'));
             fileNames = fileNames(3:length(fileNames));
-            nberBimages = length(fileNames);
-            nberBimages = nberBimages - nberPimages;
-            if videoProperties.nbBframes ~= nberBimages
-                videoProperties.nbBframes = nberBimages;
+            nberBimages = length(fileNames) - nberPimages;
+            if obj.nber_Bframes ~= nberBimages
+                obj.nber_Bframes = nberBimages;
                 %'/!\ couldnt read all the B frames'
-                errorMsg = strcat(errorMsg, 'Could not read all the B frames from the video');
+                obj.errors_log{error_count + 1} = 'Could not read all the B frames from the video';
+                error_count = error_count + 1;
+                fprintf('%s\n',obj.errors_log{error_count});
+                
             end
             for i = 1 : nberBimages
                 framesFileNames = strcat(framesFileNames,fileNames(i).name);
@@ -310,31 +318,62 @@ classdef videoReader_FFmpeg
             %frames.
             %this part of the script will check that the frames are really extracted and
             %will stop as soon as it meets a frame which could not be extracted
-            for i = 1: length(videoProperties.framesType)
-                frameImageName = getFrameImageFileName(i,videoProperties);
+            for i = 1: length(obj.frames_type)
+                frameImageName = getFrameImageFileName(i,obj);
                 testFile = length(strfind(framesFileNames,frameImageName));
-                if testFile == 0 %if the corresponding file doesn't exist stop browsing and return the correct chunck
-                    videoProperties.framesType = videoProperties.framesType(1:i-1);
-                    videoProperties.nbFrames = i-1;
+                if testFile == 0 %if the corresponding file doesn't exist stop browsing and return the correct chunck of frames
+                    obj.frames_type = obj.frames_type(1:i-1);
+                    obj.nber_frames = i-1;
+                    error_occured = 1;
                     break;
                 end
                 
             end
-            %creating a log file if errors has occured during frames reading
-            if length(errorMsg) > 0
-                '/!\Errors occured during reading; saving a log file/!\'
-                fileId = fopen(strcat(framesPath(2:length(framesPath)),'readLog.txt'),'w');
-                fprintf(fileId,'%s\n',errorMsg);
-                fclose(fileId);
+            clc
+        end
+        %function deleting the strored frames form the hard disk.
+        function unloadFromDisk(obj)
+            system(strcat('rm',[' ' obj.frame_storage_location],' -r'));
+        end
+        
+        %function reading a frame which index is given as parameter
+        function [frame] = readFrame(obj,frame_index)
+            %checking that the frame index is withing the valid range
+            if frame_index <= obj.nber_frames
+                %switching to wright section according to type of frame
+                switch obj.frames_type(frame_index)
+                    case 'P'
+                        %looking for the image index in the array of frames
+                        image_index = (obj.Pframes_indexes == frame_index);
+                        image_index = find(image_index);
+                        %file name construction
+                        fileName = strcat(obj.frame_storage_location,'/PBframes/Pframe',num2str(image_index),'.bmp');
+                    case 'B'
+                        image_index = (obj.Bframes_indexes == frame_index);
+                        image_index = find(image_index);
+                        %file name construction
+                        fileName = strcat(obj.frame_storage_location,'/PBframes/Bframe',num2str(image_index),'.bmp');
+                    case 'I'
+                        image_index = (obj.Iframes_indexes == frame_index);
+                        image_index = find(image_index);
+                        %file name construction
+                        fileName = strcat(obj.frame_storage_location,'/Iframes/Iframe',num2str(image_index),'.bmp');
+                        
+                end
                 
+                frame = imread(fileName);
+            else
+                obj.errors_log{length(obj.errors_log) + 1} = strcat('Frame', [' ' num2str(frame_index)], ' is out of bounds');
+                frame = []; %retun an empty matrix because the frame doesn't exit
+                fprintf('%s\n',obj.errors_log{end});
             end
         end
         
-        function outputArg = method1(obj,inputArg)
-            %METHOD1 Summary of this method goes here
-            %   Detailed explanation goes here
-            outputArg = obj.Property1 + inputArg;
+        %getter for errors_log
+        function error_text = get.errors_log(obj)
+            error_text = obj.errors_log;
         end
+        
     end
 end
 
@@ -342,34 +381,28 @@ end
 %takes as input arguments the frame indice and parameters of the video
 %return the file name corresponding to the input file
 
-function frameImageName = getFrameImageFileName(frameIndice, videoParams)
-
-frameIndices = 1:videoParams.nbFrames;
-IframeIndices = frameIndices(videoParams.framesType == 'I');
-PframeIndices = frameIndices(videoParams.framesType == 'P');
-BframeIndices = frameIndices(videoParams.framesType == 'B');
-frameType = videoParams.framesType(frameIndice);
+function frameImageName = getFrameImageFileName(frame_indice, video_reader_obj)
 
 %switching to  the right section according to type of frame
-switch frameType
+switch video_reader_obj.frames_type(frame_indice)
     case 'P'
         %looking for the image index in the array of frames
-        imageIndice = (PframeIndices == frameIndice);
-        imageIndice = find(imageIndice);  
+        image_index = (video_reader_obj.Pframes_indexes == frame_indice);
+        image_index = find(image_index);
         %file name construction
-        fileName = strcat('Pframe',num2str(imageIndice),'.bmp');
+        fileName = strcat('Pframe',num2str(image_index),'.bmp');
     case 'B'
-        imageIndice = (BframeIndices == frameIndice);
-        imageIndice = find(imageIndice);  
+        image_index = (video_reader_obj.Bframes_indexes == frame_indice);
+        image_index = find(image_index);
         %file name construction
-        fileName = strcat('Bframe',num2str(imageIndice),'.bmp');
-    case 'I'             
-        imageIndice = (IframeIndices == frameIndice);
-        imageIndice = find(imageIndice);  
+        fileName = strcat('Bframe',num2str(image_index),'.bmp');
+    case 'I'
+        image_index = (video_reader_obj.Iframes_indexes == frame_indice);
+        image_index = find(image_index);
         %file name construction
-        fileName = strcat('Iframe',num2str(imageIndice),'.bmp');        
-    
- end
+        fileName = strcat('Iframe',num2str(image_index),'.bmp');
+        
+end
 
 frameImageName = fileName;
 
