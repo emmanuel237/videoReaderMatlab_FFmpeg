@@ -1,4 +1,4 @@
-classdef videoReader_FFmpeg
+classdef videoReader_FFmpeg < handle
     %A class to read (almost) all types of video in Matlab. This class has  been developped as a alternative (and more) to matlab VideoReader object that is sometime buggy under Ubuntu.
     % I also provides all the properties of the input video including the type (I, P, B) of each frame. The class uses FFmpeg to decode and save all the frames of the input video as .bmp files at a specified location  (hard drive) and thus doesn't make usage of the computer's RAM . FFprobe is used to read the properties of the input videos (fps, video bitrate, video resolution, frames type, video rotation parameter).
     % ## class's accessible properties:
@@ -80,6 +80,9 @@ classdef videoReader_FFmpeg
         errors_log %log of all error associated with the operations performed on the input video
     end
     
+     properties (SetAccess=private)
+        error_count %log of all error associated with the operations performed on the input video
+    end
     
     methods
         function obj = videoReader_FFmpeg(input_vid,storage_loc)
@@ -100,6 +103,8 @@ classdef videoReader_FFmpeg
                 framesPath = strcat(storage_loc,'/', framesPath(splashes(end) + 1 :end), 'Frames');
                 obj.frame_storage_location = framesPath;
             end
+            obj.error_count = 0;
+            obj.errors_log = [];
             %reading the video's properties using ffprope
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             %reading the video's H264 profile
@@ -146,7 +151,7 @@ classdef videoReader_FFmpeg
             diary off;
             clc;
             fid = fopen(textFile);
-            tline = fgetl(fid)
+            tline = fgetl(fid);
             obj.frame_rate = eval(tline);
             fclose(fid);%closing and deleting the temporary text file
             delete(textFile);
@@ -249,11 +254,11 @@ classdef videoReader_FFmpeg
             succeed = mkdir(obj.frame_storage_location);
             if succeed ~= 1  %couldn't open the output folder
                 error_occured = 1;
-                obj.errors_log{1} = 'frame storage folder could not be created';
+                obj.error_count = obj.error_count + 1;
+                obj.errors_log{obj.error_count} = 'frame storage folder could not be created';
                 fprintf('frame storage folder could not be created\n');
                 return;
             end
-            error_count = 0;
             %creating subfolder for specific frame types
             mkdir(obj.frame_storage_location,'Iframes');
             mkdir(obj.frame_storage_location,'PBframes');
@@ -265,9 +270,10 @@ classdef videoReader_FFmpeg
             if obj.nber_Iframes ~= nberIimages
                 obj.nber_Iframes = nberIimages;
                 %'/!\ couldnt read all I frames'
-                obj.errors_log{error_count + 1} = 'Could not read all the I frames from the video';
-                error_count = error_count + 1;
-                fprintf('%s\n',obj.errors_log{error_count});
+                obj.error_count = obj.error_count + 1;
+                obj.errors_log{obj.error_count} = 'Could not read all the I frames from the video';
+                fprintf('%s\n',obj.errors_log{obj.error_count});
+                
             end
             %concatenating the files names for futher checks
             fileNames = dir(strcat(obj.frame_storage_location,'/Iframes'));
@@ -287,9 +293,10 @@ classdef videoReader_FFmpeg
             if obj.nber_Pframes ~= nberPimages
                 obj.nber_Pframes = nberPimages;
                 %'/!\ couldnt read all the P frames'
-                obj.errors_log{error_count + 1} = 'Could not read all the P frames from the video';
-                error_count = error_count + 1;
-                fprintf('%s\n',obj.errors_log{error_count});
+                obj.error_count = obj.error_count + 1;
+                obj.errors_log{obj.error_count} = 'Could not read all the P frames from the video';
+                fprintf('%s\n',obj.errors_log{obj.error_count});
+                
             end
             
             for i = 1 : nberPimages
@@ -306,9 +313,9 @@ classdef videoReader_FFmpeg
             if obj.nber_Bframes ~= nberBimages
                 obj.nber_Bframes = nberBimages;
                 %'/!\ couldnt read all the B frames'
-                obj.errors_log{error_count + 1} = 'Could not read all the B frames from the video';
-                error_count = error_count + 1;
-                fprintf('%s\n',obj.errors_log{error_count});
+                obj.error_count = obj.error_count + 1;
+                obj.errors_log{obj.error_count} = 'Could not read all the B frames from the video';
+                fprintf('%s\n',obj.errors_log{obj.error_count});
                 
             end
             for i = 1 : nberBimages
@@ -363,15 +370,21 @@ classdef videoReader_FFmpeg
                 
                 frame = imread(fileName);
             else
-                obj.errors_log{length(obj.errors_log) + 1} = strcat('Frame', [' ' num2str(frame_index)], ' is out of bounds');
+                obj.error_count = obj.error_count + 1;
+                obj.errors_log{obj.error_count} = strcat('Frame', [' ' num2str(frame_index)], ' is out of bounds');
                 frame = []; %retun an empty matrix because the frame doesn't exit
-                fprintf('%s\n',obj.errors_log{end});
+                fprintf('%s\n',obj.errors_log{obj.error_count});
+                %fprintf('error count %i\n',obj.error_count);
             end
         end
         
         %getter for errors_log
-        function error_text = get.errors_log(obj)
-            error_text = obj.errors_log;
+        function printErrors(obj)
+            
+            for i = 1 : obj.error_count
+            
+                fprintf('%s\n',obj.errors_log{i});
+            end
         end
         
     end
